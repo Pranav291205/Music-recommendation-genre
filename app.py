@@ -238,7 +238,7 @@ def get_preset_styles():
     presets = {
         'pop': {
             'name': '🎵 Pop',
-            'description': 'Catchy, upbeat songs',
+            'description': 'Catchy, upbeat songs with mass appeal',
             'danceability': 0.75,
             'energy': 0.8,
             'loudness': -6,
@@ -262,6 +262,32 @@ def get_preset_styles():
             'valence': 0.65,
             'tempo': 140
         },
+        'hiphop': {
+            'name': '🎤 Hip-Hop',
+            'description': 'Rhythmic vocal tracks with strong beats',
+            'danceability': 0.8,
+            'energy': 0.7,
+            'loudness': -7,
+            'speechiness': 0.5,
+            'acousticness': 0.1,
+            'instrumentalness': 0.05,
+            'liveness': 0.2,
+            'valence': 0.7,
+            'tempo': 100
+        },
+        'electronic': {
+            'name': '⚡ Electronic',
+            'description': 'Synthesizer-based dance music',
+            'danceability': 0.75,
+            'energy': 0.8,
+            'loudness': -4,
+            'speechiness': 0.06,
+            'acousticness': 0.1,
+            'instrumentalness': 0.6,
+            'liveness': 0.25,
+            'valence': 0.65,
+            'tempo': 130
+        },
         'chill': {
             'name': '🌙 Chill',
             'description': 'Relaxed, mellow vibes',
@@ -274,6 +300,45 @@ def get_preset_styles():
             'liveness': 0.2,
             'valence': 0.5,
             'tempo': 90
+        },
+        'party': {
+            'name': '🎉 Party',
+            'description': 'High-energy dance tracks',
+            'danceability': 0.85,
+            'energy': 0.9,
+            'loudness': -3,
+            'speechiness': 0.08,
+            'acousticness': 0.1,
+            'instrumentalness': 0.2,
+            'liveness': 0.3,
+            'valence': 0.85,
+            'tempo': 125
+        },
+        'jazz': {
+            'name': '🎷 Jazz',
+            'description': 'Smooth, improvisational music',
+            'danceability': 0.4,
+            'energy': 0.3,
+            'loudness': -12,
+            'speechiness': 0.03,
+            'acousticness': 0.9,
+            'instrumentalness': 0.7,
+            'liveness': 0.3,
+            'valence': 0.6,
+            'tempo': 110
+        },
+        'classical': {
+            'name': '🎻 Classical',
+            'description': 'Orchestral and instrumental music',
+            'danceability': 0.3,
+            'energy': 0.2,
+            'loudness': -20,
+            'speechiness': 0.02,
+            'acousticness': 0.95,
+            'instrumentalness': 0.9,
+            'liveness': 0.4,
+            'valence': 0.4,
+            'tempo': 100
         }
     }
     
