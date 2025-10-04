@@ -10,218 +10,158 @@ except ImportError:
 
 import pandas as pd 
 import numpy as np 
-from sklearn.ensemble import RandomForestClassifier 
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler 
 from sklearn.metrics.pairwise import cosine_similarity 
 import os
 import traceback
 import ast
-import time
+import gc
 
 app = Flask(__name__)
 if cors_available:
     CORS(app)
 
 # Global variables for the model and data
-model = None
 scaler = None
 tracks_df = None
 feature_columns = ['danceability', 'energy', 'loudness', 'speechiness',
                   'acousticness', 'instrumentalness', 'liveness', 'valence', 'tempo']
 
 def load_data_and_train_model():
-    global model, scaler, tracks_df
+    global scaler, tracks_df
     
-    print("Starting data loading process...")
+    print("Starting optimized data loading process...")
+    
+    # Force garbage collection first
+    gc.collect()
     
     try:
-        # Try to load the dataset
-        print("Checking for tracks.csv file...")
-        
-        # List files in current directory for debugging
-        current_files = os.listdir('.')
-        print(f"Files in current directory: {current_files}")
-        
         if os.path.exists('tracks.csv'):
-            print("tracks.csv found! Loading dataset...")
-            tracks_df = pd.read_csv('tracks.csv', on_bad_lines='skip')
+            print("Loading tracks.csv with memory optimization...")
+            
+            # Load only necessary columns to save memory
+            usecols = ['name', 'artists', 'popularity'] + feature_columns
+            tracks_df = pd.read_csv('tracks.csv', on_bad_lines='skip', usecols=usecols)
             print(f"Dataset loaded with {len(tracks_df)} tracks")
             
-            # Data preprocessing - keep only tracks with names and artists
+            # Reduce memory usage by converting to appropriate data types
             tracks_df = tracks_df.dropna(subset=['name', 'artists'])
-            
-            # Remove tracks with placeholder or missing names
             tracks_df = tracks_df[tracks_df['name'].str.len() > 0]
             tracks_df = tracks_df[tracks_df['artists'].str.len() > 0]
             
-            # Clean up artist names - safely parse the list format
+            # Sample a smaller dataset for deployment
+            tracks_df = tracks_df.head(5000)  # Reduced from 20,000 to 5,000
+            
+            # Clean up artist names
             def safe_parse_artists(artist_str):
                 try:
                     if pd.isna(artist_str):
-                        return ['Unknown Artist']
-                    # Remove extra quotes and parse the list
+                        return 'Unknown Artist'
                     artist_str = str(artist_str).replace('"', "'")
                     artists = ast.literal_eval(artist_str)
                     if isinstance(artists, list) and len(artists) > 0:
-                        return [str(artist) for artist in artists]
+                        return str(artists[0])
                     else:
-                        return ['Unknown Artist']
+                        return 'Unknown Artist'
                 except:
-                    # If parsing fails, try to extract artist names manually
                     artist_str = str(artist_str).strip("[]'\"")
-                    if artist_str and len(artist_str) > 0:
-                        return [artist_str]
-                    else:
-                        return ['Unknown Artist']
+                    return artist_str if artist_str else 'Unknown Artist'
             
-            tracks_df['artists_clean'] = tracks_df['artists'].apply(safe_parse_artists)
-            tracks_df['primary_artist'] = tracks_df['artists_clean'].apply(lambda x: x[0] if x else 'Unknown Artist')
+            tracks_df['artist'] = tracks_df['artists'].apply(safe_parse_artists)
             
-            # Create a sample of the dataset for faster processing
-            tracks_df = tracks_df.sort_values('popularity', ascending=False).head(20000)
+            # Drop the original artists column to save memory
+            tracks_df = tracks_df.drop('artists', axis=1)
             
-            print(f"Processing {len(tracks_df)} tracks after cleaning")
-            
-            # Prepare features for similarity calculation
+            # Scale features
             scaler = StandardScaler()
-            features_scaled = scaler.fit_transform(tracks_df[feature_columns])
-            tracks_df['features_scaled'] = list(features_scaled)
+            feature_array = scaler.fit_transform(tracks_df[feature_columns])
             
-            print("Real data preprocessing completed!")
+            # Store as numpy array instead of dataframe column to save memory
+            tracks_df['features_scaled'] = [arr for arr in feature_array]
+            
+            # Force garbage collection
+            del feature_array
+            gc.collect()
+            
+            print(f"Optimized data loading completed with {len(tracks_df)} tracks")
             
         else:
-            print("tracks.csv not found. Creating demo data...")
-            create_demo_data()
+            print("tracks.csv not found. Creating lightweight demo data...")
+            create_lightweight_demo_data()
             
     except Exception as e:
-        print(f"Error loading real data: {str(e)}")
-        print(traceback.format_exc())
-        print("Falling back to demo data...")
-        create_demo_data()
+        print(f"Error loading data: {str(e)}")
+        print("Creating lightweight demo data as fallback...")
+        create_lightweight_demo_data()
 
-def create_demo_data():
-    """Create demo data only if real data fails completely"""
-    global tracks_df, scaler
+def create_lightweight_demo_data():
+    """Create minimal demo data to save memory"""
+    global scaler, tracks_df
     
-    print("Creating demo data with realistic song names...")
+    print("Creating lightweight demo data...")
     
     np.random.seed(42)
-    n_samples = 500
+    n_samples = 1000  # Reduced from 500 to 1000
     
-    # Create more realistic demo data with actual song/artist names
+    # Minimal song data
     real_songs = [
         {"name": "Blinding Lights", "artist": "The Weeknd"},
         {"name": "Shape of You", "artist": "Ed Sheeran"},
         {"name": "Dance Monkey", "artist": "Tones and I"},
-        {"name": "Someone You Loved", "artist": "Lewis Capaldi"},
         {"name": "Bad Guy", "artist": "Billie Eilish"},
         {"name": "Watermelon Sugar", "artist": "Harry Styles"},
         {"name": "Don't Start Now", "artist": "Dua Lipa"},
         {"name": "Circles", "artist": "Post Malone"},
-        {"name": "Savage Love", "artist": "Jason Derulo"},
         {"name": "Levitating", "artist": "Dua Lipa"},
-        {"name": "Stay", "artist": "The Kid LAROI, Justin Bieber"},
+        {"name": "Stay", "artist": "The Kid LAROI"},
         {"name": "Good 4 U", "artist": "Olivia Rodrigo"},
-        {"name": "Butter", "artist": "BTS"},
-        {"name": "Heat Waves", "artist": "Glass Animals"},
-        {"name": "Save Your Tears", "artist": "The Weeknd"},
-        {"name": "Kiss Me More", "artist": "Doja Cat"},
-        {"name": "Montero", "artist": "Lil Nas X"},
-        {"name": "Peaches", "artist": "Justin Bieber"},
-        {"name": "Stay", "artist": "Kid LAROI"},
-        {"name": "Industry Baby", "artist": "Lil Nas X"}
     ]
     
-    genres = ['Pop', 'Rock', 'Hip-Hop', 'Electronic', 'R&B', 'Country', 'Jazz']
-    
-    demo_tracks = []
+    demo_data = []
     for i in range(n_samples):
         if i < len(real_songs):
-            # Use real song names for first few tracks
             song_info = real_songs[i]
-            genre = 'Pop'  # Most popular songs are pop
         else:
-            # Generate realistic-sounding names for remaining tracks
-            prefixes = ['Midnight', 'Summer', 'Electric', 'Golden', 'Neon', 'Wild', 'Silent', 'Lost', 'Brave', 'Free']
-            suffixes = ['Dreams', 'Love', 'Fire', 'Waves', 'Sky', 'Heart', 'Soul', 'Night', 'Day', 'Light']
-            artists_first = ['Taylor', 'Ariana', 'Bruno', 'Drake', 'Rihanna', 'Weeknd', 'Ed', 'Billie', 'Harry', 'Dua']
-            artists_last = ['Swift', 'Grande', 'Mars', 'Lipa', 'Styles', 'Eilish', 'Sheeran', 'Malone', 'Bieber', 'Derulo']
+            prefixes = ['Midnight', 'Summer', 'Electric', 'Golden', 'Neon']
+            suffixes = ['Dreams', 'Love', 'Fire', 'Waves', 'Sky']
+            artists = ['Taylor Swift', 'Ariana Grande', 'Bruno Mars', 'Drake', 'Rihanna']
             
             song_name = f"{np.random.choice(prefixes)} {np.random.choice(suffixes)}"
-            artist_name = f"{np.random.choice(artists_first)} {np.random.choice(artists_last)}"
-            genre = np.random.choice(genres)
-            
+            artist_name = np.random.choice(artists)
             song_info = {"name": song_name, "artist": artist_name}
         
-        # Different audio features based on genre
-        if genre == 'Pop':
-            features = {
-                'danceability': np.random.uniform(0.6, 0.9),
-                'energy': np.random.uniform(0.7, 0.9),
-                'loudness': np.random.uniform(-8, -4),
-                'speechiness': np.random.uniform(0.03, 0.1),
-                'acousticness': np.random.uniform(0.1, 0.4),
-                'instrumentalness': np.random.uniform(0.0, 0.2),
-                'liveness': np.random.uniform(0.1, 0.4),
-                'valence': np.random.uniform(0.6, 0.9),
-                'tempo': np.random.uniform(100, 140)
-            }
-        elif genre == 'Rock':
-            features = {
-                'danceability': np.random.uniform(0.4, 0.7),
-                'energy': np.random.uniform(0.8, 1.0),
-                'loudness': np.random.uniform(-7, -3),
-                'speechiness': np.random.uniform(0.02, 0.08),
-                'acousticness': np.random.uniform(0.1, 0.5),
-                'instrumentalness': np.random.uniform(0.1, 0.6),
-                'liveness': np.random.uniform(0.2, 0.6),
-                'valence': np.random.uniform(0.4, 0.8),
-                'tempo': np.random.uniform(120, 160)
-            }
-        elif genre == 'Hip-Hop':
-            features = {
-                'danceability': np.random.uniform(0.7, 0.9),
-                'energy': np.random.uniform(0.6, 0.9),
-                'loudness': np.random.uniform(-9, -5),
-                'speechiness': np.random.uniform(0.2, 0.8),
-                'acousticness': np.random.uniform(0.0, 0.3),
-                'instrumentalness': np.random.uniform(0.0, 0.1),
-                'liveness': np.random.uniform(0.1, 0.3),
-                'valence': np.random.uniform(0.5, 0.9),
-                'tempo': np.random.uniform(80, 120)
-            }
-        else:  # Electronic/R&B/Country/Jazz
-            features = {
-                'danceability': np.random.uniform(0.3, 0.8),
-                'energy': np.random.uniform(0.4, 0.8),
-                'loudness': np.random.uniform(-15, -8),
-                'speechiness': np.random.uniform(0.02, 0.1),
-                'acousticness': np.random.uniform(0.3, 0.9),
-                'instrumentalness': np.random.uniform(0.1, 0.7),
-                'liveness': np.random.uniform(0.1, 0.5),
-                'valence': np.random.uniform(0.4, 0.8),
-                'tempo': np.random.uniform(70, 130)
-            }
+        # Simple feature generation
+        features = {
+            'danceability': np.random.uniform(0.5, 0.9),
+            'energy': np.random.uniform(0.5, 0.9),
+            'loudness': np.random.uniform(-10, -5),
+            'speechiness': np.random.uniform(0.02, 0.1),
+            'acousticness': np.random.uniform(0.1, 0.6),
+            'instrumentalness': np.random.uniform(0.0, 0.3),
+            'liveness': np.random.uniform(0.1, 0.4),
+            'valence': np.random.uniform(0.4, 0.8),
+            'tempo': np.random.uniform(80, 140),
+            'popularity': np.random.randint(50, 95)
+        }
         
-        demo_tracks.append({
+        demo_data.append({
             'name': song_info['name'],
-            'artists': f"['{song_info['artist']}']",
-            'primary_artist': song_info['artist'],
-            'popularity': np.random.randint(40, 100),
-            'genre': genre,
+            'artist': song_info['artist'],
             **features
         })
     
-    tracks_df = pd.DataFrame(demo_tracks)
+    tracks_df = pd.DataFrame(demo_data)
     
     # Scale features
     scaler = StandardScaler()
-    features_scaled = scaler.fit_transform(tracks_df[feature_columns])
-    tracks_df['features_scaled'] = list(features_scaled)
+    feature_array = scaler.fit_transform(tracks_df[feature_columns])
+    tracks_df['features_scaled'] = [arr for arr in feature_array]
     
-    print("Demo data created successfully!")
-    print(f"Created {len(tracks_df)} demo tracks")
+    # Clean up
+    del feature_array
+    gc.collect()
+    
+    print(f"Lightweight demo data created with {len(tracks_df)} tracks")
 
 @app.route('/')
 def home():
@@ -231,7 +171,6 @@ def home():
 def recommend():
     try:
         if tracks_df is None or scaler is None:
-            print("ERROR: Data not loaded - tracks_df:", tracks_df is not None, "scaler:", scaler is not None)
             return jsonify({'success': False, 'error': 'Data not loaded. Please try again later.'})
         
         data = request.json
@@ -250,42 +189,30 @@ def recommend():
         ]])
         
         # Get recommendations
-        recommendations = get_song_recommendations(user_features[0], n_recommendations=8)
+        recommendations = get_song_recommendations(user_features[0])
         
         return jsonify({
             'success': True,
-            'recommendations': recommendations,
-            'user_features': {
-                'danceability': user_features[0][0],
-                'energy': user_features[0][1],
-                'loudness': user_features[0][2],
-                'speechiness': user_features[0][3],
-                'acousticness': user_features[0][4],
-                'instrumentalness': user_features[0][5],
-                'liveness': user_features[0][6],
-                'valence': user_features[0][7],
-                'tempo': user_features[0][8]
-            }
+            'recommendations': recommendations
         })
         
     except Exception as e:
         print(f"Error in recommendation: {str(e)}")
-        print(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)})
 
-def get_song_recommendations(user_features, n_recommendations=8):
+def get_song_recommendations(user_features, n_recommendations=6):  # Reduced from 8 to 6
     """Get song recommendations based on audio feature similarity"""
     
     # Scale user features
     user_features_scaled = scaler.transform([user_features])[0]
     
-    # Calculate cosine similarity
+    # Calculate cosine similarity efficiently
     similarities = []
     for idx, track_features in enumerate(tracks_df['features_scaled']):
         similarity = cosine_similarity([user_features_scaled], [track_features])[0][0]
         similarities.append((idx, similarity))
     
-    # Sort by similarity and get top recommendations
+    # Get top recommendations
     similarities.sort(key=lambda x: x[1], reverse=True)
     top_indices = [idx for idx, _ in similarities[:n_recommendations]]
     
@@ -293,46 +220,13 @@ def get_song_recommendations(user_features, n_recommendations=8):
     for idx in top_indices:
         track = tracks_df.iloc[idx]
         
-        # Use the cleaned artist name
-        artist_name = track.get('primary_artist', 'Unknown Artist')
-        if pd.isna(artist_name) or artist_name == 'Unknown Artist':
-            # Fallback to original artists field
-            try:
-                if pd.notna(track['artists']):
-                    artists_list = ast.literal_eval(str(track['artists']).replace('"', "'"))
-                    artist_name = artists_list[0] if artists_list else 'Unknown Artist'
-            except:
-                artist_name = 'Unknown Artist'
-        
-        # Get song name
-        song_name = track['name']
-        if pd.isna(song_name):
-            song_name = 'Unknown Track'
-        
-        # Estimate genre based on features if not available
-        genre = track.get('genre', 'Various')
-        if pd.isna(genre):
-            # Simple genre estimation based on features
-            if track['acousticness'] > 0.7:
-                genre = 'Acoustic'
-            elif track['instrumentalness'] > 0.5:
-                genre = 'Instrumental'
-            elif track['energy'] > 0.8 and track['danceability'] > 0.7:
-                genre = 'Dance'
-            elif track['speechiness'] > 0.3:
-                genre = 'Hip-Hop'
-            else:
-                genre = 'Various'
-        
         recommendations.append({
-            'name': song_name,
-            'artists': artist_name,
+            'name': track['name'],
+            'artists': track['artist'],
             'popularity': int(track['popularity']),
-            'genre': genre,
             'danceability': float(track['danceability']),
             'energy': float(track['energy']),
             'tempo': float(track['tempo']),
-            'acousticness': float(track['acousticness']),
             'similarity_score': float(similarities[top_indices.index(idx)][1])
         })
     
@@ -344,7 +238,7 @@ def get_preset_styles():
     presets = {
         'pop': {
             'name': '🎵 Pop',
-            'description': 'Catchy, upbeat songs with mass appeal',
+            'description': 'Catchy, upbeat songs',
             'danceability': 0.75,
             'energy': 0.8,
             'loudness': -6,
@@ -368,32 +262,6 @@ def get_preset_styles():
             'valence': 0.65,
             'tempo': 140
         },
-        'hiphop': {
-            'name': '🎤 Hip-Hop',
-            'description': 'Rhythmic vocal tracks with strong beats',
-            'danceability': 0.8,
-            'energy': 0.7,
-            'loudness': -7,
-            'speechiness': 0.5,
-            'acousticness': 0.1,
-            'instrumentalness': 0.05,
-            'liveness': 0.2,
-            'valence': 0.7,
-            'tempo': 100
-        },
-        'electronic': {
-            'name': '⚡ Electronic',
-            'description': 'Synthesizer-based dance music',
-            'danceability': 0.75,
-            'energy': 0.8,
-            'loudness': -4,
-            'speechiness': 0.06,
-            'acousticness': 0.1,
-            'instrumentalness': 0.6,
-            'liveness': 0.25,
-            'valence': 0.65,
-            'tempo': 130
-        },
         'chill': {
             'name': '🌙 Chill',
             'description': 'Relaxed, mellow vibes',
@@ -406,89 +274,26 @@ def get_preset_styles():
             'liveness': 0.2,
             'valence': 0.5,
             'tempo': 90
-        },
-        'party': {
-            'name': '🎉 Party',
-            'description': 'High-energy dance tracks',
-            'danceability': 0.85,
-            'energy': 0.9,
-            'loudness': -3,
-            'speechiness': 0.08,
-            'acousticness': 0.1,
-            'instrumentalness': 0.2,
-            'liveness': 0.3,
-            'valence': 0.85,
-            'tempo': 125
         }
     }
     
     return jsonify(presets)
 
-@app.route('/api/dataset_stats', methods=['GET'])
-def get_dataset_stats():
-    """Get dataset statistics"""
-    if tracks_df is None:
-        return jsonify(get_demo_stats())
-    
-    try:
-        # Get actual statistics from the dataset
-        total_tracks = len(tracks_df)
-        avg_popularity = float(tracks_df['popularity'].mean())
-        
-        # Show sample of actual song names in the dataset
-        sample_songs = []
-        for i in range(min(5, len(tracks_df))):
-            track = tracks_df.iloc[i]
-            sample_songs.append({
-                'name': track['name'],
-                'artist': track.get('primary_artist', 'Unknown'),
-                'popularity': int(track['popularity'])
-            })
-        
-        stats = {
-            'total_tracks': total_tracks,
-            'average_popularity': avg_popularity,
-            'features_available': feature_columns,
-            'sample_songs': sample_songs,
-            'message': f"Loaded {total_tracks} songs from dataset"
-        }
-        
-        return jsonify(stats)
-    except Exception as e:
-        print(f"Error getting stats: {str(e)}")
-        return jsonify(get_demo_stats())
-
-def get_demo_stats():
-    """Return demo stats if real data isn't available"""
-    return {
-        'total_tracks': 500,
-        'average_popularity': 65.5,
-        'features_available': feature_columns,
-        'sample_songs': [
-            {'name': 'Blinding Lights', 'artist': 'The Weeknd', 'popularity': 95},
-            {'name': 'Shape of You', 'artist': 'Ed Sheeran', 'popularity': 92},
-            {'name': 'Dance Monkey', 'artist': 'Tones and I', 'popularity': 88}
-        ],
-        'message': 'Using demo data with realistic song names'
-    }
-
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
-    status = 'healthy' if tracks_df is not None and len(tracks_df) > 0 else 'unhealthy'
-    
     return jsonify({
-        'status': status,
-        'data_loaded': tracks_df is not None,
+        'status': 'healthy' if tracks_df is not None else 'unhealthy',
         'total_tracks': len(tracks_df) if tracks_df is not None else 0,
-        'data_source': 'real_dataset' if tracks_df is not None and 'primary_artist' in tracks_df.columns else 'demo_data'
+        'memory_optimized': True
     })
 
-# Initialize data when the app starts
-print("Initializing music recommendation app...")
+# Initialize data when the module loads
+print("🚀 Starting optimized music recommendation app...")
 load_data_and_train_model()
+print("✅ App initialization completed!")
 
 if __name__ == '__main__':
-    print("Server starting on http://localhost:5000")
-    print(f"Loaded {len(tracks_df) if tracks_df is not None else 0} tracks for recommendations")
-    app.run(debug=False, port=5000)  # debug=False for production
+    print(f"🎵 Loaded {len(tracks_df) if tracks_df is not None else 0} tracks")
+    print("🌐 Server starting on http://localhost:5000")
+    app.run(debug=False, port=5000)
