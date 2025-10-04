@@ -1,13 +1,12 @@
 # app.py
-from flask import Flask, request, jsonify, render_template
-from flask_cors import CORS
-import pandas as pd
-import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics.pairwise import cosine_similarity
-import joblib
+from flask import Flask, request, jsonify, render_template # type: ignore
+from flask_cors import CORS # type: ignore
+import pandas as pd # type: ignore
+import numpy as np # type: ignore
+from sklearn.ensemble import RandomForestClassifier # type: ignore
+from sklearn.model_selection import train_test_split # type: ignore
+from sklearn.preprocessing import StandardScaler # type: ignore
+from sklearn.metrics.pairwise import cosine_similarity # type: ignore
 import os
 import traceback
 import ast
