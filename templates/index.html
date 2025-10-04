@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Recommender - Discover Your Next Favorite Song</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #f59e0b;
+            --success: #10b981;
+            --danger: #ef4444;
+            --dark: #1f2937;
+            --light: #f8fafc;
+            --gray: #6b7280;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: var(--dark);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 1024px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Preset Styles */
+        .preset-styles {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .preset-card {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 3px solid transparent;
+        }
+
+        .preset-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            border-color: var(--secondary);
+        }
+
+        .preset-card.active {
+            border-color: var(--secondary);
+            background: linear-gradient(135deg, #764ba2, #667eea);
+        }
+
+        .preset-icon {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .preset-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .preset-desc {
+            font-size: 0.8rem;
+            opacity: 0.9;
+        }
+
+        /* Feature Sliders */
+        .feature-slider {
+            margin-bottom: 25px;
+        }
+
+        .slider-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .slider-header label {
+            font-weight: 600;
+            color: var(--dark);
+            flex: 1;
+        }
+
+        .slider-value {
+            font-weight: bold;
+            color: var(--primary);
+            min-width: 60px;
+            text-align: right;
+        }
+
+        .slider-container {
+            position: relative;
+            height: 30px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 8px;
+            border-radius: 10px;
+            background: #e5e7eb;
+            outline: none;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: var(--primary);
+            cursor: pointer;
+            border: 3px solid white;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
+
+        .slider-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 5px;
+            font-size: 0.8rem;
+            color: var(--gray);
+        }
+
+        /* Buttons */
+        .btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 50px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-secondary {
+            background: var(--secondary);
+        }
+
+        .btn-success {
+            background: var(--success);
+        }
+
+        /* Results */
+        .results-section {
+            display: none;
+        }
+
+        .recommendations-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .song-card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border-left: 5px solid var(--primary);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .song-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+
+        .song-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+        }
+
+        .song-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+
+        .song-info {
+            flex: 1;
+        }
+
+        .song-name {
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-bottom: 5px;
+            color: var(--dark);
+        }
+
+        .song-artist {
+            color: var(--gray);
+            font-size: 0.9rem;
+        }
+
+        .song-popularity {
+            background: var(--primary);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+
+        .song-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .stat {
+            text-align: center;
+            padding: 8px;
+            background: #f8fafc;
+            border-radius: 8px;
+        }
+
+        .stat-label {
+            font-size: 0.7rem;
+            color: var(--gray);
+            margin-bottom: 3px;
+        }
+
+        .stat-value {
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        .similarity-badge {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: var(--success);
+            color: white;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
+
+        .genre-tag {
+            display: inline-block;
+            background: var(--primary);
+            color: white;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            margin-top: 5px;
+        }
+
+        /* Loading */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid var(--primary);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--primary);
+            margin-bottom: 10px;
+        }
+
+        .stat-label {
+            color: var(--gray);
+            font-size: 0.9rem;
+        }
+
+        /* Feature Radar */
+        .feature-radar {
+            margin-top: 30px;
+            text-align: center;
+        }
+
+        .radar-container {
+            max-width: 400px;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎵 Music Discovery</h1>
+            <p>Find your next favorite song based on audio features</p>
+        </div>
+
+        <div class="stats-grid" id="datasetStats">
+            <!-- Stats will be loaded here -->
+        </div>
+
+        <div class="card">
+            <h2>🎯 Choose Your Music Style</h2>
+            <p style="color: var(--gray); margin-bottom: 20px;">Select a preset or customize your preferences</p>
+            
+            <div class="preset-styles" id="presetStyles">
+                <!-- Preset buttons will be loaded here -->
+            </div>
+
+            <div style="text-align: center; margin: 20px 0;">
+                <div style="height: 2px; background: linear-gradient(90deg, transparent, #e5e7eb, transparent); margin: 30px 0;"></div>
+                <h3>🎛️ Customize Audio Features</h3>
+            </div>
+
+            <div id="featureSliders">
+                <!-- Sliders will be generated here -->
+            </div>
+
+            <div style="text-align: center; margin-top: 30px;">
+                <button class="btn btn-success" onclick="getRecommendations()">
+                    <i class="fas fa-magic"></i> Discover Songs
+                </button>
+                <button class="btn btn-secondary" onclick="resetAll()" style="margin-left: 10px;">
+                    <i class="fas fa-redo"></i> Reset All
+                </button>
+            </div>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Discovering amazing songs for you...</p>
+        </div>
+
+        <div class="card results-section" id="resultsSection">
+            <h2>🎧 Recommended Songs</h2>
+            <p style="color: var(--gray); margin-bottom: 20px;">Based on your audio preferences</p>
+            
+            <div class="recommendations-grid" id="recommendationsGrid">
+                <!-- Recommendations will be displayed here -->
+            </div>
+        </div>
+
+        <div class="card feature-radar">
+            <h2>📊 Your Audio Profile</h2>
+            <div class="radar-container">
+                <canvas id="featureRadar"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Feature definitions
+        const features = {
+            danceability: { min: 0, max: 1, default: 0.5, step: 0.01, description: "How suitable for dancing" },
+            energy: { min: 0, max: 1, default: 0.5, step: 0.01, description: "Intensity and activity level" },
+            loudness: { min: -60, max: 0, default: -10, step: 1, description: "Overall loudness (dB)" },
+            speechiness: { min: 0, max: 1, default: 0.05, step: 0.01, description: "Presence of spoken words" },
+            acousticness: { min: 0, max: 1, default: 0.5, step: 0.01, description: "Acoustic vs electronic" },
+            instrumentalness: { min: 0, max: 1, default: 0.0, step: 0.01, description: "Instrumental content" },
+            liveness: { min: 0, max: 1, default: 0.2, step: 0.01, description: "Live audience presence" },
+            valence: { min: 0, max: 1, default: 0.5, step: 0.01, description: "Musical positiveness" },
+            tempo: { min: 0, max: 240, default: 120, step: 1, description: "Speed in BPM" }
+        };
+
+        let currentPreset = null;
+        let radarChart = null;
+
+        // Initialize the application
+        window.onload = function() {
+            initializePresets();
+            initializeSliders();
+            loadDatasetStats();
+            initializeRadarChart();
+        };
+
+        // Initialize preset styles
+        async function initializePresets() {
+            try {
+                const response = await fetch('/api/preset_styles');
+                const presets = await response.json();
+                
+                const container = document.getElementById('presetStyles');
+                container.innerHTML = ''; // Clear loading text
+                
+                Object.entries(presets).forEach(([key, preset]) => {
+                    const presetCard = document.createElement('div');
+                    presetCard.className = 'preset-card';
+                    presetCard.onclick = () => applyPreset(key, preset);
+                    
+                    presetCard.innerHTML = `
+                        <div class="preset-icon">${preset.name.split(' ')[0]}</div>
+                        <div class="preset-name">${preset.name}</div>
+                        <div class="preset-desc">${preset.description}</div>
+                    `;
+                    
+                    container.appendChild(presetCard);
+                });
+            } catch (error) {
+                console.error('Error loading presets:', error);
+                // Create fallback presets if API fails
+                createFallbackPresets();
+            }
+        }
+
+        function createFallbackPresets() {
+            const fallbackPresets = {
+                'pop': { name: '🎵 Pop', description: 'Catchy, upbeat songs', danceability: 0.75, energy: 0.8, loudness: -6, speechiness: 0.06, acousticness: 0.2, instrumentalness: 0.1, liveness: 0.2, valence: 0.75, tempo: 120 },
+                'rock': { name: '🎸 Rock', description: 'Energetic guitar-driven', danceability: 0.55, energy: 0.85, loudness: -5, speechiness: 0.05, acousticness: 0.3, instrumentalness: 0.4, liveness: 0.4, valence: 0.65, tempo: 140 },
+                'hiphop': { name: '🎤 Hip-Hop', description: 'Rhythmic vocal tracks', danceability: 0.8, energy: 0.7, loudness: -7, speechiness: 0.5, acousticness: 0.1, instrumentalness: 0.05, liveness: 0.2, valence: 0.7, tempo: 100 },
+                'electronic': { name: '⚡ Electronic', description: 'Synthesizer-based dance', danceability: 0.75, energy: 0.8, loudness: -4, speechiness: 0.06, acousticness: 0.1, instrumentalness: 0.6, liveness: 0.25, valence: 0.65, tempo: 130 }
+            };
+
+            const container = document.getElementById('presetStyles');
+            container.innerHTML = '';
+
+            Object.entries(fallbackPresets).forEach(([key, preset]) => {
+                const presetCard = document.createElement('div');
+                presetCard.className = 'preset-card';
+                presetCard.onclick = () => applyPreset(key, preset);
+                
+                presetCard.innerHTML = `
+                    <div class="preset-icon">${preset.name.split(' ')[0]}</div>
+                    <div class="preset-name">${preset.name}</div>
+                    <div class="preset-desc">${preset.description}</div>
+                `;
+                
+                container.appendChild(presetCard);
+            });
+        }
+
+        // Apply preset values
+        function applyPreset(presetKey, preset) {
+            // Remove active class from all presets
+            document.querySelectorAll('.preset-card').forEach(card => {
+                card.classList.remove('active');
+            });
+            
+            // Add active class to clicked preset
+            event.currentTarget.classList.add('active');
+            
+            currentPreset = presetKey;
+            
+            // Apply preset values to sliders
+            Object.keys(features).forEach(feature => {
+                if (preset[feature] !== undefined) {
+                    const slider = document.getElementById(`${feature}Slider`);
+                    const valueDisplay = document.getElementById(`${feature}Value`);
+                    
+                    if (slider && valueDisplay) {
+                        slider.value = preset[feature];
+                        valueDisplay.textContent = parseFloat(preset[feature]).toFixed(2);
+                    }
+                }
+            });
+            
+            updateRadarChart();
+        }
+
+        // Initialize sliders
+        function initializeSliders() {
+            const container = document.getElementById('featureSliders');
+            container.innerHTML = ''; // Clear any existing content
+            
+            Object.entries(features).forEach(([key, config]) => {
+                const sliderDiv = document.createElement('div');
+                sliderDiv.className = 'feature-slider';
+                
+                sliderDiv.innerHTML = `
+                    <div class="slider-header">
+                        <label>${key.charAt(0).toUpperCase() + key.slice(1)}</label>
+                        <span class="slider-value" id="${key}Value">${config.default}</span>
+                    </div>
+                    <div class="slider-container">
+                        <input type="range" 
+                               id="${key}Slider" 
+                               min="${config.min}" 
+                               max="${config.max}" 
+                               step="${config.step}" 
+                               value="${config.default}"
+                               oninput="updateSliderValue('${key}', this.value); updateRadarChart();">
+                    </div>
+                    <div class="slider-labels">
+                        <span>${config.min}</span>
+                        <span style="color: var(--gray); font-size: 0.7rem;">${config.description}</span>
+                        <span>${config.max}</span>
+                    </div>
+                `;
+                
+                container.appendChild(sliderDiv);
+            });
+        }
+
+        // Update slider value display
+        function updateSliderValue(feature, value) {
+            const valueElement = document.getElementById(`${feature}Value`);
+            if (valueElement) {
+                valueElement.textContent = parseFloat(value).toFixed(2);
+            }
+            
+            // Remove active preset if user manually adjusts sliders
+            if (currentPreset) {
+                document.querySelectorAll('.preset-card').forEach(card => {
+                    card.classList.remove('active');
+                });
+                currentPreset = null;
+            }
+        }
+
+        // Get recommendations
+        async function getRecommendations() {
+            const loading = document.getElementById('loading');
+            const resultsSection = document.getElementById('resultsSection');
+            
+            loading.style.display = 'block';
+            resultsSection.style.display = 'none';
+
+            try {
+                const featureData = {};
+                Object.keys(features).forEach(key => {
+                    const slider = document.getElementById(`${key}Slider`);
+                    if (slider) {
+                        featureData[key] = parseFloat(slider.value);
+                    }
+                });
+
+                const response = await fetch('/api/recommend', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(featureData)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    displayRecommendations(result);
+                } else {
+                    throw new Error(result.error);
+                }
+            } catch (error) {
+                alert('Error getting recommendations: ' + error.message);
+                console.error('Recommendation error:', error);
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        // Display recommendations
+        function displayRecommendations(result) {
+            const resultsSection = document.getElementById('resultsSection');
+            const recommendationsGrid = document.getElementById('recommendationsGrid');
+            
+            let recommendationsHTML = '';
+            
+            if (result.recommendations && result.recommendations.length > 0) {
+                result.recommendations.forEach((song, index) => {
+                    const similarityPercent = (song.similarity_score * 100).toFixed(1);
+                    const popularityStars = '★'.repeat(Math.floor(song.popularity / 20)) + '☆'.repeat(5 - Math.floor(song.popularity / 20));
+                    
+                    recommendationsHTML += `
+                        <div class="song-card">
+                            <div class="similarity-badge">${similarityPercent}% match</div>
+                            <div class="song-header">
+                                <div class="song-info">
+                                    <div class="song-name">${song.name}</div>
+                                    <div class="song-artist">${song.artists}</div>
+                                    <div class="genre-tag">${song.genre || 'Various'}</div>
+                                </div>
+                                <div class="song-popularity" title="Popularity: ${song.popularity}">
+                                    ${song.popularity}
+                                </div>
+                            </div>
+                            <div class="song-stats">
+                                <div class="stat">
+                                    <div class="stat-label">Dance</div>
+                                    <div class="stat-value">${(song.danceability * 100).toFixed(0)}%</div>
+                                </div>
+                                <div class="stat">
+                                    <div class="stat-label">Energy</div>
+                                    <div class="stat-value">${(song.energy * 100).toFixed(0)}%</div>
+                                </div>
+                                <div class="stat">
+                                    <div class="stat-label">Tempo</div>
+                                    <div class="stat-value">${song.tempo.toFixed(0)} BPM</div>
+                                </div>
+                                <div class="stat">
+                                    <div class="stat-label">Acoustic</div>
+                                    <div class="stat-value">${(song.acousticness * 100).toFixed(0)}%</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            } else {
+                recommendationsHTML = `
+                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--gray);">
+                        <i class="fas fa-music" style="font-size: 3rem; margin-bottom: 20px; opacity: 0.5;"></i>
+                        <h3>No recommendations found</h3>
+                        <p>Try adjusting your audio feature preferences</p>
+                    </div>
+                `;
+            }
+            
+            recommendationsGrid.innerHTML = recommendationsHTML;
+            resultsSection.style.display = 'block';
+            
+            // Smooth scroll to results
+            resultsSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Reset all sliders
+        function resetAll() {
+            // Remove active preset
+            document.querySelectorAll('.preset-card').forEach(card => {
+                card.classList.remove('active');
+            });
+            currentPreset = null;
+            
+            // Reset sliders to default values
+            Object.entries(features).forEach(([key, config]) => {
+                const slider = document.getElementById(`${key}Slider`);
+                const valueDisplay = document.getElementById(`${key}Value`);
+                
+                if (slider && valueDisplay) {
+                    slider.value = config.default;
+                    valueDisplay.textContent = config.default;
+                }
+            });
+            
+            updateRadarChart();
+        }
+
+        // Load dataset statistics
+        async function loadDatasetStats() {
+            try {
+                const response = await fetch('/api/dataset_stats');
+                const stats = await response.json();
+
+                const statsContainer = document.getElementById('datasetStats');
+                let statsHTML = '';
+
+                if (stats.genres_available) {
+                    // Show genre distribution
+                    Object.entries(stats.genres_available).forEach(([genre, count]) => {
+                        statsHTML += `
+                            <div class="stat-card">
+                                <div class="stat-number">${count}</div>
+                                <div class="stat-label">${genre} Songs</div>
+                            </div>
+                        `;
+                    });
+                } else {
+                    // Fallback stats
+                    statsHTML = `
+                        <div class="stat-card">
+                            <div class="stat-number">${stats.total_tracks || '500'}</div>
+                            <div class="stat-label">Total Songs</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${stats.average_popularity ? stats.average_popularity.toFixed(0) : '65'}</div>
+                            <div class="stat-label">Avg Popularity</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${stats.features_available ? stats.features_available.length : '9'}</div>
+                            <div class="stat-label">Audio Features</div>
+                        </div>
+                    `;
+                }
+
+                statsContainer.innerHTML = statsHTML;
+            } catch (error) {
+                console.error('Error loading dataset stats:', error);
+                // Show fallback stats
+                const statsContainer = document.getElementById('datasetStats');
+                statsContainer.innerHTML = `
+                    <div class="stat-card">
+                        <div class="stat-number">500</div>
+                        <div class="stat-label">Total Songs</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">65</div>
+                        <div class="stat-label">Avg Popularity</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">9</div>
+                        <div class="stat-label">Audio Features</div>
+                    </div>
+                `;
+            }
+        }
+
+        // Initialize radar chart
+        function initializeRadarChart() {
+            const ctx = document.getElementById('featureRadar').getContext('2d');
+            
+            radarChart = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: Object.keys(features).map(key => key.charAt(0).toUpperCase() + key.slice(1)),
+                    datasets: [{
+                        label: 'Your Preferences',
+                        data: Object.values(features).map(f => f.default),
+                        backgroundColor: 'rgba(99, 102, 241, 0.2)',
+                        borderColor: 'rgba(99, 102, 241, 1)',
+                        borderWidth: 2,
+                        pointBackgroundColor: 'rgba(99, 102, 241, 1)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgba(99, 102, 241, 1)'
+                    }]
+                },
+                options: {
+                    scales: {
+                        r: {
+                            beginAtZero: true,
+                            max: 1,
+                            ticks: {
+                                display: false
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    elements: {
+                        line: {
+                            tension: 0.1
+                        }
+                    }
+                }
+            });
+        }
+
+        // Update radar chart
+        function updateRadarChart() {
+            if (!radarChart) return;
+            
+            const currentValues = Object.keys(features).map(key => {
+                const slider = document.getElementById(`${key}Slider`);
+                if (slider) {
+                    // Normalize values to 0-1 scale for radar chart
+                    let value = parseFloat(slider.value);
+                    const config = features[key];
+                    
+                    // Normalize loudness and tempo to 0-1 scale
+                    if (key === 'loudness') {
+                        value = (value - config.min) / (config.max - config.min);
+                    } else if (key === 'tempo') {
+                        value = (value - config.min) / (config.max - config.min);
+                    }
+                    
+                    return value;
+                }
+                return 0;
+            });
+            
+            radarChart.data.datasets[0].data = currentValues;
+            radarChart.update();
+        }
+
+        // Check server health
+        async function checkServerHealth() {
+            try {
+                const response = await fetch('/api/health');
+                const health = await response.json();
+                console.log('Server health:', health);
+            } catch (error) {
+                console.error('Server health check failed:', error);
+            }
+        }
+
+        // Initial health check
+        setTimeout(checkServerHealth, 1000);
+    </script>
+</body>
+</html>
