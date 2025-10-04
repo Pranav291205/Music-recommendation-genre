@@ -1,6 +1,13 @@
 # app.py
 from flask import Flask, request, jsonify, render_template 
-from flask_cors import CORS 
+try:
+    from flask_cors import CORS
+    cors_available = True
+    print("CORS support enabled")
+except ImportError:
+    cors_available = False
+    print("CORS support disabled - flask-cors not installed")
+
 import pandas as pd 
 import numpy as np 
 from sklearn.ensemble import RandomForestClassifier 
@@ -10,9 +17,11 @@ from sklearn.metrics.pairwise import cosine_similarity
 import os
 import traceback
 import ast
+import time
 
 app = Flask(__name__)
-CORS(app)
+if cors_available:
+    CORS(app)
 
 # Global variables for the model and data
 model = None
@@ -24,62 +33,71 @@ feature_columns = ['danceability', 'energy', 'loudness', 'speechiness',
 def load_data_and_train_model():
     global model, scaler, tracks_df
     
+    print("Starting data loading process...")
+    
     try:
-        # Load your dataset
-        print("Loading dataset...")
-        tracks_df = pd.read_csv('tracks.csv', on_bad_lines='skip')
-        print(f"Dataset loaded with {len(tracks_df)} tracks")
+        # Try to load the dataset
+        print("Checking for tracks.csv file...")
         
-        # Data preprocessing - keep only tracks with names and artists
-        tracks_df = tracks_df.dropna(subset=['name', 'artists'])
+        # List files in current directory for debugging
+        current_files = os.listdir('.')
+        print(f"Files in current directory: {current_files}")
         
-        # Remove tracks with placeholder or missing names
-        tracks_df = tracks_df[tracks_df['name'].str.len() > 0]
-        tracks_df = tracks_df[tracks_df['artists'].str.len() > 0]
-        
-        # Clean up artist names - safely parse the list format
-        def safe_parse_artists(artist_str):
-            try:
-                if pd.isna(artist_str):
-                    return ['Unknown Artist']
-                # Remove extra quotes and parse the list
-                artist_str = str(artist_str).replace('"', "'")
-                artists = ast.literal_eval(artist_str)
-                if isinstance(artists, list) and len(artists) > 0:
-                    return [str(artist) for artist in artists]
-                else:
-                    return ['Unknown Artist']
-            except:
-                # If parsing fails, try to extract artist names manually
-                artist_str = str(artist_str).strip("[]'\"")
-                if artist_str and len(artist_str) > 0:
-                    return [artist_str]
-                else:
-                    return ['Unknown Artist']
-        
-        tracks_df['artists_clean'] = tracks_df['artists'].apply(safe_parse_artists)
-        tracks_df['primary_artist'] = tracks_df['artists_clean'].apply(lambda x: x[0] if x else 'Unknown Artist')
-        
-        # Create a sample of the dataset for faster processing (remove for full dataset)
-        # Keep popular and diverse tracks for better recommendations
-        tracks_df = tracks_df.sort_values('popularity', ascending=False).head(20000)
-        
-        print(f"Processing {len(tracks_df)} tracks after cleaning")
-        
-        # Prepare features for similarity calculation
-        scaler = StandardScaler()
-        features_scaled = scaler.fit_transform(tracks_df[feature_columns])
-        tracks_df['features_scaled'] = list(features_scaled)
-        
-        print("Data preprocessing completed!")
-        print("Sample of tracks:")
-        for i in range(min(5, len(tracks_df))):
-            track = tracks_df.iloc[i]
-            print(f"  - {track['name']} by {track['primary_artist']} (Popularity: {track['popularity']})")
-        
+        if os.path.exists('tracks.csv'):
+            print("tracks.csv found! Loading dataset...")
+            tracks_df = pd.read_csv('tracks.csv', on_bad_lines='skip')
+            print(f"Dataset loaded with {len(tracks_df)} tracks")
+            
+            # Data preprocessing - keep only tracks with names and artists
+            tracks_df = tracks_df.dropna(subset=['name', 'artists'])
+            
+            # Remove tracks with placeholder or missing names
+            tracks_df = tracks_df[tracks_df['name'].str.len() > 0]
+            tracks_df = tracks_df[tracks_df['artists'].str.len() > 0]
+            
+            # Clean up artist names - safely parse the list format
+            def safe_parse_artists(artist_str):
+                try:
+                    if pd.isna(artist_str):
+                        return ['Unknown Artist']
+                    # Remove extra quotes and parse the list
+                    artist_str = str(artist_str).replace('"', "'")
+                    artists = ast.literal_eval(artist_str)
+                    if isinstance(artists, list) and len(artists) > 0:
+                        return [str(artist) for artist in artists]
+                    else:
+                        return ['Unknown Artist']
+                except:
+                    # If parsing fails, try to extract artist names manually
+                    artist_str = str(artist_str).strip("[]'\"")
+                    if artist_str and len(artist_str) > 0:
+                        return [artist_str]
+                    else:
+                        return ['Unknown Artist']
+            
+            tracks_df['artists_clean'] = tracks_df['artists'].apply(safe_parse_artists)
+            tracks_df['primary_artist'] = tracks_df['artists_clean'].apply(lambda x: x[0] if x else 'Unknown Artist')
+            
+            # Create a sample of the dataset for faster processing
+            tracks_df = tracks_df.sort_values('popularity', ascending=False).head(20000)
+            
+            print(f"Processing {len(tracks_df)} tracks after cleaning")
+            
+            # Prepare features for similarity calculation
+            scaler = StandardScaler()
+            features_scaled = scaler.fit_transform(tracks_df[feature_columns])
+            tracks_df['features_scaled'] = list(features_scaled)
+            
+            print("Real data preprocessing completed!")
+            
+        else:
+            print("tracks.csv not found. Creating demo data...")
+            create_demo_data()
+            
     except Exception as e:
-        print(f"Error loading data: {str(e)}")
+        print(f"Error loading real data: {str(e)}")
         print(traceback.format_exc())
+        print("Falling back to demo data...")
         create_demo_data()
 
 def create_demo_data():
@@ -203,6 +221,7 @@ def create_demo_data():
     tracks_df['features_scaled'] = list(features_scaled)
     
     print("Demo data created successfully!")
+    print(f"Created {len(tracks_df)} demo tracks")
 
 @app.route('/')
 def home():
@@ -212,6 +231,7 @@ def home():
 def recommend():
     try:
         if tracks_df is None or scaler is None:
+            print("ERROR: Data not loaded - tracks_df:", tracks_df is not None, "scaler:", scaler is not None)
             return jsonify({'success': False, 'error': 'Data not loaded. Please try again later.'})
         
         data = request.json
@@ -430,7 +450,7 @@ def get_dataset_stats():
             'average_popularity': avg_popularity,
             'features_available': feature_columns,
             'sample_songs': sample_songs,
-            'message': f"Loaded {total_tracks} real songs from your dataset"
+            'message': f"Loaded {total_tracks} songs from dataset"
         }
         
         return jsonify(stats)
@@ -455,16 +475,20 @@ def get_demo_stats():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
+    status = 'healthy' if tracks_df is not None and len(tracks_df) > 0 else 'unhealthy'
+    
     return jsonify({
-        'status': 'healthy',
+        'status': status,
         'data_loaded': tracks_df is not None,
-        'scaler_loaded': scaler is not None,
         'total_tracks': len(tracks_df) if tracks_df is not None else 0,
         'data_source': 'real_dataset' if tracks_df is not None and 'primary_artist' in tracks_df.columns else 'demo_data'
     })
 
+# Initialize data when the app starts
+print("Initializing music recommendation app...")
+load_data_and_train_model()
+
 if __name__ == '__main__':
-    load_data_and_train_model()
     print("Server starting on http://localhost:5000")
     print(f"Loaded {len(tracks_df) if tracks_df is not None else 0} tracks for recommendations")
-    app.run(debug=True, port=5000)
+    app.run(debug=False, port=5000)  # debug=False for production
