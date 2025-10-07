@@ -156,7 +156,7 @@
             font-weight: 600;
         }
 
-        /* --- Loading Spinner --- */
+        /* --- Loading Spinner (omitted for brevity) --- */
         .spinner {
             border: 4px solid var(--text-secondary);
             border-top: 4px solid var(--primary-color);
@@ -237,6 +237,7 @@
                 if (response.ok) {
                     fetchedSongs = await response.json();
                 } else {
+                    // Critical: Server is running but API failed (e.g., 500 error)
                     throw new Error(`Server returned status ${response.status}.`);
                 }
 
@@ -247,7 +248,6 @@
                 // Prepare and store song data, ensuring image URLs (or placeholders) are present
                 allSongs = fetchedSongs.map(song => ({
                     ...song,
-                    // If the backend doesn't provide an image, use a placeholder
                     imageUrl: song.imageUrl || getRandomAlbumArt() 
                 }));
                 
@@ -280,13 +280,7 @@
             formSpinner.style.display = 'block';
 
             const selectedText = songSearchInput.value.trim();
-            if (!selectedText) {
-                submitButton.disabled = false;
-                formSpinner.style.display = 'none';
-                return;
-            }
-
-            // Extract the song title by splitting the "Title by Artist" string
+            
             const songTitle = selectedText.split(' by ')[0];
             const matchingSong = allSongs.find(song => song.title === songTitle);
 
@@ -309,13 +303,12 @@
                 });
 
                 if (!response.ok) {
-                    // Check if Flask returns a non-JSON error (like an HTML error page)
+                    // Check if Flask returns a non-JSON error (like a 404 or 500)
                     const errorText = await response.text();
                     console.error('Backend returned non-JSON error:', errorText);
                     throw new Error(`Server returned HTTP status ${response.status}. Check Flask route /recommend.`);
                 }
                 
-                // This line will now correctly parse the JSON response
                 const result = await response.json();
                 
                 if (!result.recommendations || result.recommendations.length === 0) {
@@ -325,9 +318,8 @@
 
                 predictedGenreSpan.textContent = result.predicted_genre;
                 
-                // Render recommendations, ensuring image URLs are present
+                // Render recommendations, including the image URL from the result data
                 recommendationsList.innerHTML = result.recommendations.map(song => {
-                    // Use the imageUrl provided by the backend, or a random placeholder if missing
                     const imageUrl = song.imageUrl || getRandomAlbumArt();
                     return `
                         <li>
@@ -341,7 +333,6 @@
 
             } catch (error) {
                 console.error('Error during recommendation:', error);
-                // Display a clean error message to the user
                 predictedGenreSpan.textContent = `ERROR: Recommendation failed.`;
                 recommendationsList.innerHTML = `<li>Error: ${error.message}</li><li>**Action:** Ensure the selected song is in your database and the Flask backend is running correctly.</li>`;
             } finally {

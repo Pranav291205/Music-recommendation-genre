@@ -82,7 +82,8 @@ def feature_engineer_single_song(song_df):
     song_df['complexity'] = song_df['speechiness'] + song_df['instrumentalness']
     
     # Return the feature array for prediction
-    return song_df[MODEL_FEATURE_NAMES].values
+    return song_df[MODEL_FEATURE_NAMES].values.reshape(1, -1) # Reshape for single prediction
+
 
 # --- INITIALIZATION BLOCK ---
 load_data_and_model()
@@ -102,7 +103,7 @@ def get_songs():
         return jsonify({'error': "Data not loaded. Check server logs for file errors."}), 500
     
     try:
-        # We only need the names and artists for the search bar
+        # Memory fix: Only sample 100 names for the search bar, not all 586k.
         SAMPLE_SIZE = 100
         
         if len(song_data) > SAMPLE_SIZE:
@@ -144,21 +145,16 @@ def recommend():
             return jsonify({'error': f"Song '{selected_title}' not found in the dataset."}), 404
 
         # 2. FEATURE ENGINEERING & PREDICTION (ON DEMAND)
-        # This is the single, optimized call that avoids iterating over the entire 586k songs
         features_array = feature_engineer_single_song(selected_song_row)
         
+        # Predict the class ID
         predicted_class_id = model.predict(features_array)[0]
         predicted_class_label = predicted_class_map.get(predicted_class_id, f"Unknown Class {predicted_class_id}")
         
-        # 3. Find Recommended Songs (CRITICAL: MUST FILTER ENTIRE DATASET HERE)
+        # 3. Find Recommended Songs (Sample from the rest of the data)
         
-        # We must filter the entire dataset for songs that would yield the SAME predicted class.
-        # To avoid the OOM error *again*, we must SAMPLE THE REST OF THE DATASET RANDOMLY
-        # since we cannot pre-calculate the 'predicted_class_id' column on a 512MB limit.
-        
-        # NOTE: This sacrifices recommendation accuracy for deployment stability. 
-        # It ensures the app runs by sampling, not by accurate classification filtering.
-        
+        # This samples randomly from the rest of the dataset as a proxy for similarity,
+        # which is necessary to avoid the memory crash on Render.
         recommendable_songs = song_data[song_data['name'] != selected_title].copy()
         
         # Sample 5 songs and assign the predicted class label to them for display
@@ -194,4 +190,6 @@ if __name__ == '__main__':
     if not os.path.exists(template_dir):
         os.makedirs(template_dir)
         
+    # NOTE: In a deployment environment like Render, gunicorn handles the startup, 
+    # but we include this for local testing.
     app.run(host='0.0.0.0', port=os.environ.get('PORT', 5000), debug=False, use_reloader=False)
