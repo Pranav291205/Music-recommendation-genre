@@ -1,364 +1,208 @@
-# app.py
-from flask import Flask, request, jsonify, render_template 
-try:
-    from flask_cors import CORS
-    cors_available = True
-    print("CORS support enabled")
-except ImportError:
-    cors_available = False
-    print("CORS support disabled - flask-cors not installed")
-
-import pandas as pd 
-import numpy as np 
-from sklearn.preprocessing import StandardScaler 
-from sklearn.metrics.pairwise import cosine_similarity 
+import joblib
+import pandas as pd
+from flask import Flask, request, jsonify, render_template
+import numpy as np
 import os
-import traceback
-import ast
-import gc
+import random
+import re 
 
+# Initialize the Flask application
 app = Flask(__name__)
-if cors_available:
-    CORS(app)
 
-# Global variables for the model and data
-scaler = None
-tracks_df = None
-feature_columns = ['danceability', 'energy', 'loudness', 'speechiness',
-                  'acousticness', 'instrumentalness', 'liveness', 'valence', 'tempo']
+# --- CONFIGURATION ---
+MODEL_PATH = 'random_forest (2).pkl'
+DATA_PATH = 'tracks.csv' 
 
-def load_data_and_train_model():
-    global scaler, tracks_df
+# Columns needed for identification and feature engineering (FE)
+REQUIRED_COLUMNS = ['name', 'artists', 'duration_ms', 'danceability', 'energy', 'loudness', 
+                    'speechiness', 'acousticness', 'instrumentalness', 'liveness', 'valence', 
+                    'tempo', 'key', 'mode', 'time_signature'] 
+
+# REQUIRED 14 FEATURES (Model's Expectation):
+MODEL_FEATURE_NAMES = [
+    'danceability', 'energy', 'loudness', 'speechiness', 'acousticness',
+    'instrumentalness', 'liveness', 'valence', 'tempo', 
+    'duration_min', 'energy_dance_ratio', 'acoustic_energy_balance', 
+    'mood_index', 'complexity'
+]
+
+# --- GLOBAL DATA / MODEL OBJECTS ---
+model = None
+song_data = None
+predicted_class_map = {} 
+
+
+# --- HELPER FUNCTIONS ---
+
+def clean_artist_name(artist_series):
+    """Removes brackets and quotes from the string representation of an artist list."""
+    return artist_series.astype(str).str.replace(r"^\[\'|\'\]$", '', regex=True).str.replace(r"\'", '', regex=True)
+
+
+def load_and_preprocess_data():
+    global song_data, model
     
-    print("Starting optimized data loading process...")
-    
-    # Force garbage collection first
-    gc.collect()
-    
+    if song_data is not None:
+        return song_data
+        
     try:
-        if os.path.exists('tracks.csv'):
-            print("Loading tracks.csv with memory optimization...")
+        if not model:
+            print("Model is not loaded. Cannot process data.")
+            return None
             
-            # Load only necessary columns to save memory
-            usecols = ['name', 'artists', 'popularity'] + feature_columns
-            tracks_df = pd.read_csv('tracks.csv', on_bad_lines='skip', usecols=usecols)
-            print(f"Dataset loaded with {len(tracks_df)} tracks")
-            
-            # Reduce memory usage by converting to appropriate data types
-            tracks_df = tracks_df.dropna(subset=['name', 'artists'])
-            tracks_df = tracks_df[tracks_df['name'].str.len() > 0]
-            tracks_df = tracks_df[tracks_df['artists'].str.len() > 0]
-            
-            # Sample a smaller dataset for deployment
-            tracks_df = tracks_df.head(5000)  # Reduced from 20,000 to 5,000
-            
-            # Clean up artist names
-            def safe_parse_artists(artist_str):
-                try:
-                    if pd.isna(artist_str):
-                        return 'Unknown Artist'
-                    artist_str = str(artist_str).replace('"', "'")
-                    artists = ast.literal_eval(artist_str)
-                    if isinstance(artists, list) and len(artists) > 0:
-                        return str(artists[0])
-                    else:
-                        return 'Unknown Artist'
-                except:
-                    artist_str = str(artist_str).strip("[]'\"")
-                    return artist_str if artist_str else 'Unknown Artist'
-            
-            tracks_df['artist'] = tracks_df['artists'].apply(safe_parse_artists)
-            
-            # Drop the original artists column to save memory
-            tracks_df = tracks_df.drop('artists', axis=1)
-            
-            # Scale features
-            scaler = StandardScaler()
-            feature_array = scaler.fit_transform(tracks_df[feature_columns])
-            
-            # Store as numpy array instead of dataframe column to save memory
-            tracks_df['features_scaled'] = [arr for arr in feature_array]
-            
-            # Force garbage collection
-            del feature_array
-            gc.collect()
-            
-            print(f"Optimized data loading completed with {len(tracks_df)} tracks")
-            
-        else:
-            print("tracks.csv not found. Creating lightweight demo data...")
-            create_lightweight_demo_data()
-            
-    except Exception as e:
-        print(f"Error loading data: {str(e)}")
-        print("Creating lightweight demo data as fallback...")
-        create_lightweight_demo_data()
+        song_data = pd.read_csv(DATA_PATH)
+        
+        # Verify raw columns needed for FE (Feature Engineering)
+        missing_raw = [col for col in REQUIRED_COLUMNS if col not in song_data.columns]
+        if missing_raw:
+            print(f"CRITICAL ERROR: Missing raw columns in tracks.csv: {missing_raw}")
+            return None
 
-def create_lightweight_demo_data():
-    """Create minimal demo data to save memory"""
-    global scaler, tracks_df
-    
-    print("Creating lightweight demo data...")
-    
-    np.random.seed(42)
-    n_samples = 1000  # Reduced from 500 to 1000
-    
-    # Minimal song data
-    real_songs = [
-        {"name": "Blinding Lights", "artist": "The Weeknd"},
-        {"name": "Shape of You", "artist": "Ed Sheeran"},
-        {"name": "Dance Monkey", "artist": "Tones and I"},
-        {"name": "Bad Guy", "artist": "Billie Eilish"},
-        {"name": "Watermelon Sugar", "artist": "Harry Styles"},
-        {"name": "Don't Start Now", "artist": "Dua Lipa"},
-        {"name": "Circles", "artist": "Post Malone"},
-        {"name": "Levitating", "artist": "Dua Lipa"},
-        {"name": "Stay", "artist": "The Kid LAROI"},
-        {"name": "Good 4 U", "artist": "Olivia Rodrigo"},
-    ]
-    
-    demo_data = []
-    for i in range(n_samples):
-        if i < len(real_songs):
-            song_info = real_songs[i]
-        else:
-            prefixes = ['Midnight', 'Summer', 'Electric', 'Golden', 'Neon']
-            suffixes = ['Dreams', 'Love', 'Fire', 'Waves', 'Sky']
-            artists = ['Taylor Swift', 'Ariana Grande', 'Bruno Mars', 'Drake', 'Rihanna']
-            
-            song_name = f"{np.random.choice(prefixes)} {np.random.choice(suffixes)}"
-            artist_name = np.random.choice(artists)
-            song_info = {"name": song_name, "artist": artist_name}
+        # --- FEATURE ENGINEERING (Recreating the 14 features for the model) ---
+        print("Performing feature engineering to match model input (14 features)...")
         
-        # Simple feature generation
-        features = {
-            'danceability': np.random.uniform(0.5, 0.9),
-            'energy': np.random.uniform(0.5, 0.9),
-            'loudness': np.random.uniform(-10, -5),
-            'speechiness': np.random.uniform(0.02, 0.1),
-            'acousticness': np.random.uniform(0.1, 0.6),
-            'instrumentalness': np.random.uniform(0.0, 0.3),
-            'liveness': np.random.uniform(0.1, 0.4),
-            'valence': np.random.uniform(0.4, 0.8),
-            'tempo': np.random.uniform(80, 140),
-            'popularity': np.random.randint(50, 95)
-        }
+        epsilon = 1e-6 
         
-        demo_data.append({
-            'name': song_info['name'],
-            'artist': song_info['artist'],
-            **features
-        })
+        # 1. duration_min (Requires duration_ms)
+        song_data['duration_min'] = song_data['duration_ms'] / 60000.0
+        
+        # 2. energy_dance_ratio (Requires energy and danceability)
+        song_data['energy_dance_ratio'] = song_data['energy'] / (song_data['danceability'] + epsilon)
+        
+        # 3. acoustic_energy_balance (MOCKED CALCULATION)
+        song_data['acoustic_energy_balance'] = (song_data['acousticness'] + song_data['energy']) / 2
+        
+        # 4. mood_index (MOCKED CALCULATION using valence and energy)
+        song_data['mood_index'] = song_data['valence'] * song_data['energy']
+        
+        # 5. complexity (MOCKED CALCULATION using speechiness and instrumentalness)
+        song_data['complexity'] = song_data['speechiness'] + song_data['instrumentalness']
+        
+        
+        # --- PREDICT CLASS FOR ALL SONGS ---
+        print("Predicting classes for all songs using the 14 engineered features...")
+        features_for_prediction = song_data[MODEL_FEATURE_NAMES].values
+        
+        song_data['predicted_class_id'] = model.predict(features_for_prediction)
+        
+        print(f"Data loading and prediction successful. Total songs: {len(song_data)}")
+        return song_data
+        
+    except Exception as e:
+        print(f"CRITICAL ERROR during data loading or feature engineering: {e}")
+        return None
+
+
+# --- INITIALIZATION BLOCK ---
+
+try:
+    model = joblib.load(MODEL_PATH)
+    num_classes = len(model.classes_) if hasattr(model, 'classes_') else 3 
+    predicted_class_map = {i: f"Predicted Class {i}" for i in range(num_classes)}
     
-    tracks_df = pd.DataFrame(demo_data)
+    song_data = load_and_preprocess_data()
     
-    # Scale features
-    scaler = StandardScaler()
-    feature_array = scaler.fit_transform(tracks_df[feature_columns])
-    tracks_df['features_scaled'] = [arr for arr in feature_array]
-    
-    # Clean up
-    del feature_array
-    gc.collect()
-    
-    print(f"Lightweight demo data created with {len(tracks_df)} tracks")
+except Exception as e:
+    print(f"Initialization failed: {e}")
+    model = None
+    song_data = None
+
+
+# --- FLASK ROUTES ---
 
 @app.route('/')
 def home():
+    """Renders the index.html file from the templates folder."""
     return render_template('index.html')
 
-@app.route('/api/recommend', methods=['POST'])
-def recommend():
+@app.route('/api/songs', methods=['GET'])
+def get_songs():
+    """Returns a simplified list of a LIMITED number of songs for the frontend search bar."""
+    if song_data is None:
+        return jsonify({'error': f"Data not loaded. Check console for missing raw columns: {REQUIRED_COLUMNS}"}), 500
+    
     try:
-        if tracks_df is None or scaler is None:
-            return jsonify({'success': False, 'error': 'Data not loaded. Please try again later.'})
+        SAMPLE_SIZE = 100
         
-        data = request.json
+        if len(song_data) > SAMPLE_SIZE:
+            sampled_data = song_data.sample(n=SAMPLE_SIZE, random_state=42).copy()
+        else:
+            sampled_data = song_data.copy()
+            
+        # 1. Clean the 'artists' column for display
+        sampled_data['artists_clean'] = clean_artist_name(sampled_data['artists'])
+            
+        # 2. Indexing with 'name' and the cleaned 'artists' column
+        song_list = sampled_data[['name', 'artists_clean']].rename(columns={'name': 'title', 'artists_clean': 'artist'}).to_dict('records')
         
-        # Extract audio features from request
-        user_features = np.array([[
-            float(data.get('danceability', 0.5)),
-            float(data.get('energy', 0.5)),
-            float(data.get('loudness', -10)),
-            float(data.get('speechiness', 0.05)),
-            float(data.get('acousticness', 0.5)),
-            float(data.get('instrumentalness', 0.0)),
-            float(data.get('liveness', 0.2)),
-            float(data.get('valence', 0.5)),
-            float(data.get('tempo', 120))
-        ]])
+        print(f"Sent {len(song_list)} songs to the frontend for search.")
         
-        # Get recommendations
-        recommendations = get_song_recommendations(user_features[0])
+        return jsonify(song_list)
+    
+    except Exception as e:
+        error_msg = f"An unexpected error occurred in /api/songs: {str(e)}"
+        app.logger.error(error_msg)
+        return jsonify({'error': error_msg}), 500
+
+
+@app.route('/recommend', methods=['POST'])
+def recommend():
+    """Recommends 5 songs from the same PREDICTED CLASS ID as the selected song."""
+    if song_data is None:
+        return jsonify({'error': 'Data processing failed. Cannot recommend.'}), 500
+
+    try:
+        data = request.get_json(force=True)
+        selected_title = data.get('song_title')
+        
+        selected_song_row = song_data[song_data['name'] == selected_title]
+        
+        if selected_song_row.empty:
+            return jsonify({'error': f"Song '{selected_title}' not found in the dataset."}), 404
+
+        # Get the predicted class ID (this was calculated at startup)
+        predicted_class_id = selected_song_row['predicted_class_id'].iloc[0]
+        predicted_class_label = predicted_class_map.get(predicted_class_id, f"Unknown Class {predicted_class_id}")
+        
+        print(f"Selected song assigned to: {predicted_class_label}")
+
+        # Find Recommended Songs
+        class_songs = song_data[song_data['predicted_class_id'] == predicted_class_id]
+        
+        # Exclude the selected song and ensure we are working on a copy
+        recommendable_songs = class_songs[class_songs['name'] != selected_title].copy()
+        
+        # Clean the artist name for the recommendation list output
+        recommendable_songs['artists_clean'] = clean_artist_name(recommendable_songs['artists'])
+        
+        # 1. Select the columns needed
+        cols_for_output = recommendable_songs[['name', 'artists_clean']]
+        
+        # 2. Rename columns for the frontend (title and artist)
+        cols_for_output = cols_for_output.rename(columns={'name': 'title', 'artists_clean': 'artist'})
+        
+        # 3. Sample and convert to list (using reset_index for robust JSON output)
+        if len(cols_for_output) > 5:
+            recommended_list = cols_for_output.sample(n=5, random_state=1).reset_index(drop=True).to_dict('records')
+        else:
+            recommended_list = cols_for_output.reset_index(drop=True).to_dict('records')
+
         
         return jsonify({
-            'success': True,
-            'recommendations': recommendations
+            'selected_song': selected_title,
+            'predicted_genre': predicted_class_label, 
+            'recommendations': recommended_list
         })
-        
+
     except Exception as e:
-        print(f"Error in recommendation: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)})
+        error_msg = f"An internal error occurred during recommendation. Error: {str(e)}"
+        app.logger.error(error_msg)
+        return jsonify({'error': error_msg}), 500
 
-def get_song_recommendations(user_features, n_recommendations=6):  # Reduced from 8 to 6
-    """Get song recommendations based on audio feature similarity"""
-    
-    # Scale user features
-    user_features_scaled = scaler.transform([user_features])[0]
-    
-    # Calculate cosine similarity efficiently
-    similarities = []
-    for idx, track_features in enumerate(tracks_df['features_scaled']):
-        similarity = cosine_similarity([user_features_scaled], [track_features])[0][0]
-        similarities.append((idx, similarity))
-    
-    # Get top recommendations
-    similarities.sort(key=lambda x: x[1], reverse=True)
-    top_indices = [idx for idx, _ in similarities[:n_recommendations]]
-    
-    recommendations = []
-    for idx in top_indices:
-        track = tracks_df.iloc[idx]
-        
-        recommendations.append({
-            'name': track['name'],
-            'artists': track['artist'],
-            'popularity': int(track['popularity']),
-            'danceability': float(track['danceability']),
-            'energy': float(track['energy']),
-            'tempo': float(track['tempo']),
-            'similarity_score': float(similarities[top_indices.index(idx)][1])
-        })
-    
-    return recommendations
-
-@app.route('/api/preset_styles', methods=['GET'])
-def get_preset_styles():
-    """Get preset music styles"""
-    presets = {
-        'pop': {
-            'name': '🎵 Pop',
-            'description': 'Catchy, upbeat songs with mass appeal',
-            'danceability': 0.75,
-            'energy': 0.8,
-            'loudness': -6,
-            'speechiness': 0.06,
-            'acousticness': 0.2,
-            'instrumentalness': 0.1,
-            'liveness': 0.2,
-            'valence': 0.75,
-            'tempo': 120
-        },
-        'rock': {
-            'name': '🎸 Rock',
-            'description': 'Energetic guitar-driven music',
-            'danceability': 0.55,
-            'energy': 0.85,
-            'loudness': -5,
-            'speechiness': 0.05,
-            'acousticness': 0.3,
-            'instrumentalness': 0.4,
-            'liveness': 0.4,
-            'valence': 0.65,
-            'tempo': 140
-        },
-        'hiphop': {
-            'name': '🎤 Hip-Hop',
-            'description': 'Rhythmic vocal tracks with strong beats',
-            'danceability': 0.8,
-            'energy': 0.7,
-            'loudness': -7,
-            'speechiness': 0.5,
-            'acousticness': 0.1,
-            'instrumentalness': 0.05,
-            'liveness': 0.2,
-            'valence': 0.7,
-            'tempo': 100
-        },
-        'electronic': {
-            'name': '⚡ Electronic',
-            'description': 'Synthesizer-based dance music',
-            'danceability': 0.75,
-            'energy': 0.8,
-            'loudness': -4,
-            'speechiness': 0.06,
-            'acousticness': 0.1,
-            'instrumentalness': 0.6,
-            'liveness': 0.25,
-            'valence': 0.65,
-            'tempo': 130
-        },
-        'chill': {
-            'name': '🌙 Chill',
-            'description': 'Relaxed, mellow vibes',
-            'danceability': 0.5,
-            'energy': 0.4,
-            'loudness': -15,
-            'speechiness': 0.04,
-            'acousticness': 0.8,
-            'instrumentalness': 0.5,
-            'liveness': 0.2,
-            'valence': 0.5,
-            'tempo': 90
-        },
-        'party': {
-            'name': '🎉 Party',
-            'description': 'High-energy dance tracks',
-            'danceability': 0.85,
-            'energy': 0.9,
-            'loudness': -3,
-            'speechiness': 0.08,
-            'acousticness': 0.1,
-            'instrumentalness': 0.2,
-            'liveness': 0.3,
-            'valence': 0.85,
-            'tempo': 125
-        },
-        'jazz': {
-            'name': '🎷 Jazz',
-            'description': 'Smooth, improvisational music',
-            'danceability': 0.4,
-            'energy': 0.3,
-            'loudness': -12,
-            'speechiness': 0.03,
-            'acousticness': 0.9,
-            'instrumentalness': 0.7,
-            'liveness': 0.3,
-            'valence': 0.6,
-            'tempo': 110
-        },
-        'classical': {
-            'name': '🎻 Classical',
-            'description': 'Orchestral and instrumental music',
-            'danceability': 0.3,
-            'energy': 0.2,
-            'loudness': -20,
-            'speechiness': 0.02,
-            'acousticness': 0.95,
-            'instrumentalness': 0.9,
-            'liveness': 0.4,
-            'valence': 0.4,
-            'tempo': 100
-        }
-    }
-    
-    return jsonify(presets)
-
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({
-        'status': 'healthy' if tracks_df is not None else 'unhealthy',
-        'total_tracks': len(tracks_df) if tracks_df is not None else 0,
-        'memory_optimized': True
-    })
-
-# Initialize data when the module loads
-print("🚀 Starting optimized music recommendation app...")
-load_data_and_train_model()
-print("✅ App initialization completed!")
-
+# --- RUN APPLICATION ---
 if __name__ == '__main__':
-    print(f"🎵 Loaded {len(tracks_df) if tracks_df is not None else 0} tracks")
-    print("🌐 Server starting on http://localhost:5000")
-    app.run(debug=False, port=5000)
+    print("\nStarting Flask server. Access the frontend at: http://127.0.0.1:5000/")
+    
+    # NOTE: Since we are using render_template, we rely on the user having 
+    # created the templates/index.html folder and file separately.
+    app.run(debug=True, host='127.0.0.1', port=5000, use_reloader=False)
