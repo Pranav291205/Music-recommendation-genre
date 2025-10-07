@@ -12,7 +12,7 @@ app = Flask(__name__)
 # --- CONFIGURATION ---
 MODEL_PATH = 'random_forest (2).pkl'
 DATA_PATH = 'tracks.csv' 
-MEMORY_SAFE_SONG_COUNT = 50000 # Memory optimization: Load only the first 50,000 songs
+MEMORY_SAFE_SONG_COUNT = 1000 # FIX: Reduced song count to 1,000 for maximum memory safety
 
 # Columns needed for identification and feature engineering (FE)
 REQUIRED_COLUMNS = ['name', 'artists', 'duration_ms', 'danceability', 'energy', 'loudness', 
@@ -41,7 +41,7 @@ def clean_artist_name(artist_series):
 
 def load_data_and_model():
     """
-    Loads model and the first 50,000 songs of data using nrows to prevent OOM errors.
+    Loads model and the first 1,000 songs of data using nrows to prevent OOM errors.
     """
     global model, song_data, predicted_class_map
     
@@ -56,7 +56,7 @@ def load_data_and_model():
         
         # 2. Load Data (MEMORY OPTIMIZED: LOAD ONLY THE FIRST N ROWS)
         print(f"Loading only the first {MEMORY_SAFE_SONG_COUNT} songs for memory safety...")
-        # FIX: Use nrows to load only the first 50000 rows
+        # FIX: Use nrows to load only the first 1000 rows
         song_data = pd.read_csv(DATA_PATH, nrows=MEMORY_SAFE_SONG_COUNT) 
         
         # Verify raw columns needed for FE
@@ -107,11 +107,11 @@ def get_songs():
         return jsonify({'error': "Data not loaded. Check server logs for file errors."}), 500
     
     try:
-        # We only sample 100 songs from the loaded 50,000 for display speed
+        # We only sample 100 songs from the loaded 1,000 for display speed
         SAMPLE_SIZE = 100
         
         if len(song_data) > SAMPLE_SIZE:
-            # We take a simple head/slice, since the first 50k were already loaded
+            # We take a simple head/slice, since the first 1000 were already loaded
             sampled_data = song_data.head(SAMPLE_SIZE).copy()
         else:
             sampled_data = song_data.copy()
@@ -144,7 +144,7 @@ def recommend():
         selected_song_row = song_data[song_data['name'] == selected_title].copy()
         
         if selected_song_row.empty:
-            # The song must be in the 50,000 loaded songs to be found
+            # The song must be in the first 1000 loaded songs to be found
             return jsonify({'error': f"Song '{selected_title}' not found in the loaded subset of the database."}), 404
 
         # 2. FEATURE ENGINEERING & PREDICTION (ON DEMAND)
@@ -178,7 +178,7 @@ def recommend():
     except Exception as e:
         error_msg = f"An internal error occurred during recommendation: {str(e)}"
         app.logger.error(error_msg)
-        return jsonify({'error': error_msg}), 500
+        return jsonify({'error': error_msg}), 0
 
 # --- RUN APPLICATION ---
 if __name__ == '__main__':
