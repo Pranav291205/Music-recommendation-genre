@@ -12,7 +12,7 @@ app = Flask(__name__)
 # --- CONFIGURATION ---
 MODEL_PATH = 'random_forest (2).pkl'
 DATA_PATH = 'tracks.csv' 
-MEMORY_SAFE_SONG_COUNT = 1000 # FIX: Reduced song count to 1,000 for maximum memory safety
+MEMORY_SAFE_SONG_COUNT = 10000 # FIX: Reduced song count to 1,000 for maximum memory safety
 
 # Columns needed for identification and feature engineering (FE)
 REQUIRED_COLUMNS = ['name', 'artists', 'duration_ms', 'danceability', 'energy', 'loudness', 
